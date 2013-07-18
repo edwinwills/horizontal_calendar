@@ -1,0 +1,182 @@
+<?php
+
+/**
+ * Implements hook_block_info().
+ */
+function horizontal_calendar_block_info() {
+  $blocks['horizontal_calendar'] = array(
+    'info' => t('Horizontal calendar'), //The name that will appear in the block list.
+    'cache' => DRUPAL_CACHE_PER_ROLE, //Default
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ * 
+ * Prepares the contents of the block.
+ */
+function horizontal_calendar_block_view($delta = '') {
+  switch($delta){
+    case 'horizontal_calendar':
+      module_load_include('inc', 'availability_calendar', 'availability_calendar');
+      
+      $nodes = horizontal_calendar_get_nodes("yurt");
+      
+      if (isset($_GET['month']) && isset($_GET['year'])) {
+        $month = $_GET['month'];
+        $year = $_GET['year'];
+      
+        $month = date('F', strtotime("$month $year"));
+        $year = date('Y', strtotime("$month $year"));
+      }
+      else {
+        $month = date('F');
+        $year = date('Y');
+      }
+            
+      while ($month == "November" || $month == "December" || $month == "January" || $month == "February") {
+        $current_month = $month;
+        $month = date('F', strtotime("+1 month", strtotime("$current_month $year")));
+        $year = date('Y', strtotime("+1 month", strtotime("$current_month $year")));
+      }
+      
+      $previous_month = date('F', strtotime("-1 month", strtotime("$month $year")));
+      $previous_year = date('Y', strtotime("-1 month", strtotime("$month $year")));
+      
+      while ($previous_month == "November" || $previous_month == "December" || $previous_month == "January" || $previous_month == "February") {
+        $temp_month = $previous_month;
+        $previous_month = date('F', strtotime("-1 month", strtotime("$temp_month $previous_year")));
+        $previous_year = date('Y', strtotime("-1 month", strtotime("$temp_month $previous_year")));
+      }
+      
+      $next_month = date('F', strtotime("+1 month", strtotime("$month $year")));
+      $next_year = date('Y', strtotime("+1 month", strtotime("$month $year")));
+      
+      while ($next_month == "November" || $next_month == "December" || $next_month == "January" || $next_month == "February") {
+        $temp_month = $next_month;
+        $next_month = date('F', strtotime("-1 month", strtotime("$temp_month $next_year")));
+        $next_year = date('Y', strtotime("-1 month", strtotime("$temp_month $next_year")));
+      }
+      
+      // Setup the table
+      $header = array(
+        'Yurt name',
+      );
+      
+      $header = array_merge($header, horizontal_calendar_get_month($month, $year));
+      $rows = array();
+      
+      $block['subject'] = t("Availability for $month $year");
+
+      foreach ($nodes as $node) {
+        $node_availability = horizontal_calendar_get_availability($node->nid, $month, $year);
+        $this_row = array($node->title);
+        $this_row = array_merge($this_row, horizontal_calendar_get_month($month, $year, $node_availability));
+        $rows[] = array('data' => $this_row);
+      }
+
+      $block['content'] = '<div class="horizontal-calendar">';
+      $block['content'] .= theme_table(array('header' => $header, 'rows' => $rows, 'attributes' => array(), 'caption' => null, 'colgroups' => array(), 'sticky' => false, 'empty' => array()));
+      $block['content'] .= '<div class="navigation">';
+      $block['content'] .= '<ul>';
+      $block['content'] .= '<li class="previous"><a href="?month='.$previous_month.'&year='.$previous_year.'">&larr; Previous month</a></li>';
+      $block['content'] .= '<li class="next"><a href="?month='.$next_month.'&year='.$next_year.'">Next month &rarr;</a></li>';
+      $block['content'] .= '</ul>';
+      $block['content'] .= '</div>';
+      $block['content'] .= '</div>';
+    return $block;
+  }
+}
+
+function horizontal_calendar_get_month($month = false, $year = false, $availability = false) {
+  $status_styling = array(
+    2 => 'cal-av',
+    3 => 'cal-na',
+    4 => 'cal-opt',
+    5 => 'cal-av',
+    6 => 'cal-av',
+    7 => 'cal-course',
+  );
+  
+  $row = array();
+  
+  if (!$month) {
+    $month = date('F');
+    $year = date('Y');
+  }
+  else {
+    $date = strtotime("$month $year");
+    $month = date('F', $date);
+  }
+  
+  $date = strtotime("1 $month $year");
+  
+  $max_days = date('t', $date);
+   
+  $i = 1;
+  while ($i <= $max_days) {
+    if (!$availability) {
+      $row[] = array('data' => $i, 'class' => 'width-20');
+    }
+    else if (isset($availability[$i])) {
+      $data = "";
+
+      if ($availability[$i] == 5) {
+        $data = "HS";
+      }
+      else if ($availability[$i] == 7) {
+        $data = "C";
+      }
+      else if ($data == "" && $availability[$i] != 3 ) {
+        $data = "LS";
+      }
+      //$row[] = '<td class="'.$status_styling[$availability[$i]].'">'.$availability[$i].'</td>';
+      $row[] = array('data' => $data, 'class' => 'cal-date '.$status_styling[$availability[$i]]);
+    }
+    else {
+      //$row[] = "<td class=\"cal-av\"></td>";
+      //$row[] = $availability[$i];
+      $row[] = array('data' => "", 'class' => 'cal-av cal-date');
+    }
+    $i++;
+  }
+  
+  return $row;
+}
+
+function horizontal_calendar_get_nodes($type = false) {
+  $conditions = array();
+  if ($type) {
+    $conditions = array('type' => $type);
+  }
+
+  $nodes = node_load_multiple(array(), $conditions);
+  return $nodes;
+}
+
+function horizontal_calendar_get_availability($nid, $month, $year) {
+  $from = strtotime("1 $month $year");
+  $last_date = date("t M Y", $from);
+  $from = date("c", $from);
+  $from = DateTime::createFromFormat("Y-m-d\TH:i:sP", $from); 
+  $to = date("c", strtotime($last_date));
+  $to = DateTime::createFromFormat("Y-m-d\TH:i:sP", $to); 
+  $cid_field = 'field_availability_cid';
+  $default_state = 2;
+  $field_table = "field_data_field_availability";
+  $node = node_load($nid);
+  $node_cid = field_get_items("node", $node, "field_availability");
+  $node_cid = $node_cid[0]['cid'];  
+  
+  //$availability = availability_calendar_query_available(null, $field_table, $cid_field, $from, $to_or_duration, $default_state);
+  $availability = availability_calendar_get_availability($node_cid, $from, $to, $default_state);
+  $availability_status = array();
+  foreach ($availability as $date => $status) {
+    $this_date = strtotime($date);
+    $this_day = date('j', $this_date);
+    $availability_status[$this_day] = $status;
+  }
+  
+  return $availability_status;
+}

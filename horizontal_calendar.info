@@ -1,0 +1,6 @@
+name = Horizontal calendar
+description = "Provides a horizontal calendar showing availability dates for selected content types"
+package = Horizontal Calendar
+core = 7.x
+configure = admin/config/administration/horizontal_calendar
+
